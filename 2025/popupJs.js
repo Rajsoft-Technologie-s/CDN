@@ -1,178 +1,156 @@
 (function (window) {
-
-class PopupJs {
-    constructor() {
-        this.modal = null;
-        this.closeBtn = null;
-        this.confirmBtn = null;
-        this.cancelBtn = null;
-        this._onKeyDown = this._onKeyDown.bind(this);
-    }
-
-    _createModal() {
-        if (this.modal) return;
-
-        this.modal = document.createElement("div");
-
-        const style = document.createElement("style");
-        style.innerHTML = `
-        .popupjs-footer button{ color:black !important; }
-        .model-box {width: 400px;}
-        @media (max-width: 600px) { .model-box {width: 90%;}}
-        `;
-        document.head.appendChild(style);
-
-        Object.assign(this.modal.style, {
-            display: "none",
-            position: "fixed",
-            top: "0",
-            left: "0",
-            width: "100%",
-            height: "100%",
-            background: "rgba(0,0,0,0.5)",
-            justifyContent: "center",
-            alignItems: "center",
-            zIndex: "200000"
-        });
-
-        this.modal.innerHTML = `
-        <div class="model-box" style="background:white;border-radius:4px;text-align:left;box-shadow:0 0 10px rgba(0,0,0,0.3);position:relative;">
-        
-        <span style="position:absolute;margin-top:12px;right:11px;font-size:23px;cursor:pointer;" class="popupjs-modal-close">
-        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24">
-        <path d="M4.707 3.293 3.293 4.707 10.586 12 3.293 19.293 4.707 20.707 12 13.414 19.293 20.707 20.707 19.293 13.414 12 20.707 4.707 19.293 3.293 12 10.586z"/>
-        </svg>
-        </span>
-
-        <b style="position:absolute;top:12px;left:15px;font-size:14px;color:#000" class="popupjs-modal-title"></b>
-
-        <div style="display:flex;align-items:center;gap:10px;padding:20px;margin-top:30px;" class="popupjs-modal-body">
-        <div class="popupjs-modal-icon"></div>
-        <div style="color:#000" class="popupjs-modal-message"></div>
-        </div>
-
-        <div class="popupjs-footer" style="padding:10px;border-top:1px solid #e3e3e3;text-align:right;border-bottom-left-radius:3px;border-bottom-right-radius:3px;">
-        <button class="btn border-0 pb-1 pt-1 confirm-btn">Close</button>
-        <button class="btn border-0 pb-1 pt-1 cancel-btn">Cancel</button>
-        </div>
-
-        </div>`;
-
-        this.closeBtn = this.modal.querySelector(".popupjs-modal-close");
-        this.confirmBtn = this.modal.querySelector(".confirm-btn");
-        this.cancelBtn = this.modal.querySelector(".cancel-btn");
-
-        this.closeBtn.addEventListener("click", () => this.close());
-        this.cancelBtn.addEventListener("click", () => this.close());
-    }
-
-    show({ title, message, type = "info", showCancel = false, onConfirm = null }) {
-
-        this._createModal();
-
-        if (!document.body.contains(this.modal)) {
-            document.body.appendChild(this.modal);
+    class PopupJs {
+        constructor() {
+            this.modal = null;
+            this.toastContainers = {};
+            this._injectStyles();
         }
 
-        document.body.style.overflow = "hidden";
+        _injectStyles() {
+            if (document.getElementById("popupjs-shared-styles")) return;
+            const style = document.createElement("style");
+            style.id = "popupjs-shared-styles";
+            style.innerHTML = `
+                /* --- Overlay & Modal --- */
+                .popupjs-overlay {
+                    display: none; position: fixed; top: 0; left: 0;
+                    width: 100%; height: 100%; background: rgba(0,0,0,0.5);
+                    justify-content: center; align-items: center; z-index: 999999; padding: 20px;
+                }
+                .model-box { 
+                    width: 100%; max-width: 440px; border-radius: 6px; padding: 24px; 
+                    position: relative; animation: popupEnter 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+                }
+                .model-box.theme-light { background: white; color: #212529; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
+                .model-box.theme-dark { background: #1a1a1a; color: #fff; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+                
+                @keyframes popupEnter { from { opacity: 0; transform: scale(0.92); } to { opacity: 1; transform: scale(1); } }
 
-        this.modal.querySelector(".popupjs-modal-title").innerHTML = title;
-        this.modal.querySelector(".popupjs-modal-message").innerHTML =
-            `<p style="margin:0">${message}</p>`;
+                .m-close-btn { position: absolute; top: 18px; right: 18px; cursor: pointer; border: none; background: none; color: #adb5bd; }
+                .m-header { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+                .m-icon-box { width: 28px; height: 28px; flex-shrink: 0; }
+                .m-title { margin: 0; font-size: 1.25rem; font-weight: 700; }
+                .m-body { font-size: 1rem; margin-bottom: 24px; opacity: 0.8; }
+                .popupjs-actions { display: flex; justify-content: flex-end; gap: 10px; }
 
-        this.modal.querySelector(".popupjs-modal-icon").innerHTML =
-            this.getIcon(type);
+                /* --- Toasts --- */
+                .popupjs-t-container { position: fixed; z-index: 1000000; display: flex; flex-direction: column; gap: 10px; padding: 20px; pointer-events: none; }
+                .t-top-right { top: 0; right: 0; }
+                .t-top-left { top: 0; left: 0; }
+                .t-bottom-right { bottom: 0; right: 0; }
+                .t-bottom-left { bottom: 0; left: 0; }
+                .t-top-center { top: 0; left: 50%; transform: translateX(-50%); }
+                .t-bottom-center { bottom: 0; left: 50%; transform: translateX(-50%); }
 
-        this.modal.style.display = "flex";
+                .popupjs-toast {
+                    padding: 12px 18px; border-radius: 10px; display: flex; align-items: center; 
+                    gap: 12px; min-width: 260px; pointer-events: auto; position: relative;
+                    animation: toastIn 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards;
+                    transition: 0.3s;
+                }
+                .popupjs-toast.theme-dark { background: #1a1a1a; color: #fff; box-shadow: 0 8px 16px rgba(0,0,0,0.3); }
+                .popupjs-toast.theme-light { background: #fff; color: #000; border: 1px solid #ddd; box-shadow: 0 8px 16px rgba(0,0,0,0.1); }
+                
+                .toast-icon { width: 22px; height: 22px; flex-shrink: 0; display: flex; align-items: center; }
+                .toast-custom-img img { width: 22px; height: 22px; object-fit: contain; }
+                
+                .toast-close-x { cursor: pointer; margin-left: auto; opacity: 0.6; display: flex; align-items: center; padding-left: 8px; transition: 0.2s; }
+                .toast-close-x:hover { opacity: 1; }
 
-        if (showCancel) {
-            this.confirmBtn.innerText = "Yes";
-            this.cancelBtn.innerText = "Cancel";
-            this.cancelBtn.style.display = "inline-block";
-        } else {
-            this.confirmBtn.innerText = "Close";
-            this.cancelBtn.style.display = "none";
+                @keyframes toastIn { from { opacity: 0; transform: translateY(-20px); } to { opacity: 1; transform: translateY(0); } }
+            `;
+            document.head.appendChild(style);
         }
 
-        this.confirmBtn.onclick = () => {
-            if (onConfirm) onConfirm();
-            this.close();
-        };
-
-        window.addEventListener("keydown", this._onKeyDown);
-    }
-
-    close() {
-        if (this.modal) {
-            this.modal.style.display = "none";
-            document.body.style.overflow = "auto";
+        _getIcon(type, colorOverride) {
+            const icons = {
+                error: `<svg viewBox="0 0 24 24" fill="${colorOverride || '#ff5252'}"><path d="M12 22C6.47715 22 2 17.5228 2 12C2 6.47715 6.47715 2 12 2C17.5228 2 22 6.47715 22 12C22 17.5228 17.5228 22 12 22ZM11 15V17H13V15H11ZM11 7V13H13V7H11Z"></path></svg>`,
+                success: `<svg viewBox="0 0 24 24" fill="${colorOverride || '#00c853'}"><path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22ZM17.4571 9.45711L11 15.9142L6.79289 11.7071L8.20711 10.2929L11 13.0858L16.0429 8.04289L17.4571 9.45711Z"></path></svg>`,
+                info: `<svg viewBox="0 0 24 24" fill="${colorOverride || '#2196f3'}"><path d="M12 22C6.47715 22 2 17.5228 2 12C2 6.47715 6.47715 2 12 2C17.5228 2 22 6.47715 22 12C22 17.5228 17.5228 22 12 22ZM11 11V17H13V11H11ZM11 7V9H13V7H11Z"></path></svg>`,
+                confirm: `<svg viewBox="0 0 24 24" fill="${colorOverride || '#111111'}"><path d="M12 22C6.47715 22 2 17.5228 2 12C2 6.47715 6.47715 2 12 2C17.5228 2 22 6.47715 22 12C22 17.5228 17.5228 22 12 22ZM12 20C16.4183 20 20 16.4183 20 12C20 7.58172 16.4183 4 12 4C7.58172 4 4 7.58172 4 12C4 16.4183 7.58172 20 12 20ZM11 15H13V17H11V15ZM13 13.3551V14H11V12.5C11 11.9477 11.4477 11.5 12 11.5C12.8284 11.5 13.5 10.8284 13.5 10C13.5 9.17157 12.8284 8.5 12 8.5C11.2723 8.5 10.6656 9.01823 10.5288 9.70577L8.56731 9.31346C8.88637 7.70919 10.302 6.5 12 6.5C13.933 6.5 15.5 8.067 15.5 10C15.5 11.5855 14.4457 12.9248 13 13.3551Z"></path></svg>`
+            };
+            return icons[type] || icons.info;
         }
-        window.removeEventListener("keydown", this._onKeyDown);
+
+        show(opt) {
+            if (!this.modal) {
+                this.modal = document.createElement("div");
+                this.modal.className = "popupjs-overlay";
+                this.modal.innerHTML = `
+                    <div class="model-box">
+                        <button class="m-close-btn"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+                        <div class="m-header"><div class="m-icon-box"></div><h3 class="m-title"></h3></div>
+                        <div class="m-body"></div>
+                        <div class="popupjs-actions">
+                            <button class="btn btn-light m-cancel">Cancel</button>
+                            <button class="btn btn-primary m-confirm">Confirm</button>
+                        </div>
+                    </div>`;
+                document.body.appendChild(this.modal);
+            }
+
+            const theme = opt.theme || 'light';
+            const box = this.modal.querySelector(".model-box");
+            box.className = `model-box theme-${theme}`;
+
+            this.modal.querySelector(".m-icon-box").innerHTML = this._getIcon(opt.type);
+            this.modal.querySelector(".m-title").innerText = opt.title;
+            this.modal.querySelector(".m-body").innerHTML = opt.message;
+            
+            const btnOk = this.modal.querySelector(".m-confirm");
+            const btnNo = this.modal.querySelector(".m-cancel");
+            btnNo.style.display = opt.showCancel ? "inline-block" : "none";
+            btnOk.innerText = opt.showCancel ? "Confirm" : "OK";
+
+            const hide = () => this.modal.style.display = "none";
+            btnOk.onclick = () => { if(opt.onConfirm) opt.onConfirm(); hide(); };
+            btnNo.onclick = hide;
+            this.modal.querySelector(".m-close-btn").onclick = hide;
+            this.modal.style.display = "flex";
+        }
+
+        toast(opt) {
+            const pos = opt.position || 'bottom-center';
+            let cont = document.querySelector(`.t-${pos}`);
+            if (!cont) {
+                cont = document.createElement("div");
+                cont.className = `popupjs-t-container t-${pos}`;
+                document.body.appendChild(cont);
+            }
+            
+            const toast = document.createElement("div");
+            toast.className = `popupjs-toast theme-${opt.theme || 'dark'}`;
+            
+            const iconHtml = (opt.icon === 'success' || opt.icon === 'error' || opt.icon === 'info') 
+                ? `<div class="toast-icon">${this._getIcon(opt.icon)}</div>` 
+                : `<div class="toast-custom-img">${opt.icon}</div>`;
+            
+            toast.innerHTML = `
+                ${iconHtml}
+                <div style="font-size:14px; font-weight:500;">${opt.message}</div>
+                <div class="toast-close-x">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                </div>
+            `;
+            
+            cont.appendChild(toast);
+
+            const removeToast = () => {
+                toast.style.opacity = "0";
+                setTimeout(() => toast.remove(), 300);
+            };
+
+            toast.querySelector(".toast-close-x").onclick = removeToast;
+            setTimeout(removeToast, opt.duration || 4500);
+        }
     }
 
-    _onKeyDown(e) {
-        if (e.key === "Escape") this.close();
-    }
+    const instance = new PopupJs();
 
-    getIcon(type) {
-
-        const icons = {
-            success: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACgAAAAoCAYAAACM/rhtAAAACXBIWXMAAAsTAAALEwEAmpwYAAADbElEQVR4nO1YPUwUQRQe4j8iolGC0djY2pEYQkgm+94sbPAq9ayMtYmNIfGn0NBYSAzCvlnBq9QoGqmMQkQsrFWijVqoaGOMEfGHGGNQg3l3s+d67O0tx92BCV+yzd2bmW/ee/PmeyPEEpYQgRlRpbRqU6ROIGE/El4HggEg6AMNxy3Pam/ual4nFgpIeBA1zhT4fgLBHXBhH2+oogQtz2oHDb+ZCGh4hxpfAcE4anyfh+yYRRZUlKT0ZINKqfWzfu+RdeihAwSEhBM5RK8lUolqsViQSCWqOSeB4ItPEgieqF61XSwmOK6zGQhGsp4kfCtdua3oyVDjMyR8GhbCYpEcTC5DwjNZT2p4XFS4UeOgP4nda+8sFUEfSNgbCPeAmAu4JAQG3xBlQDLjyWF/HeUpjDdyRlSlQ5vJkQm7z64XZYLdZ9ejxinjiEex6iRqTATy40i5yPlAwlNZL5LaIwoBNAyZAZ8rcU3ZZ+21QPDRRGw40thxnVWg4ZsheKEUBJq6m9YAwU1OFyDYFWYDGs4bgtPSkzV5JwMXrDm5OwY5JBwNpMzhMDtFane2Nnro5J0QNXb4hjIlN5WSHBKOyotydZhta3frxoDd0SiCXcbw+3zIOZlUGQqSY8JRY/w85HBHGV0yk77JZ2O51g4guI+Ep8PKQpjnCpFjIOFLM+ZKfoIarppdvIiTBkjYHyRZLLn02hmZxmtfjtpFvzH6kM+GcxMInueSbJp9IO7FJWfW/mTG6qhdHMsekh5Zl5ekJxuCJIEgNR9yRpj4WrEjUiHHOu4hJLFIciG3lx21k1ruIQq6Og9JKIIcg5ssM/4H3yyFjEeyQqGQsciSvM0VoBhyXBtBw2Ssqy5XaiHhSVFmWK7Vmo0Ad34x5daYcflXTuByEpSZqvAQNd5qTDWuiDVIuUr+c0V1yuVisQEIBgIke8RiQxMXXo0PgrUudggqBW4JuTUM1Lm782kBHNepBYIDbefatpSMJPTDVv/QmG+KZXqcEpSjbg7xFerXS1FKGFX8Nyczi0yyNGKx2dLXsiFM46VvJsKe3KcP0OCKcoAVN3dfoQ9DlJb046DhNZenMBv+vxRKPU6d3JvuaQmnCz2/AcEvzl3lqf3JzuRKUUlIT9awqGCZzuFmPcl6jsPKj5rcjC/oA+YSxH+AP6vVpKHGs3HVAAAAAElFTkSuQmCC",
-            error: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACgAAAAoCAYAAACM/rhtAAAACXBIWXMAAAsTAAALEwEAmpwYAAADVElEQVR4nO2YTU8UQRCGRzDxQpToxYtEovEjngyGkCz9Fhs4bGLwthf9ASQeMIgHbwYP6H9Qg/8AJejRgB6ERIhB0YPG6AGM33rhI1NNmxp6Ni07M8wOs4QY3mQvu9XVT213V1W35+1qV/EyRMcZuKyBO5pojIHnDLxgYEIDIwwMmmKxzXheg7ddMkRNMjED7zSRSfNhok+aaMgQNdcTbC8TXWeiHxEAX5hoVhM90sADJppkosUqO+A7A1dNqbQvX7jOzhMMTG2Y7FUwWbF4JnZcodDCSvUx0fSGgOaMUq35wBE1M/Dbde4Dvcbz9tTiR8Yw8Nrx89UohbwAfzHAmuj2VpbHlMuNGhhmojULuZoX5GFTLB7zchIDFxlYdv7JfJY7T7FSl5x/ci73g5OHNHDL2ZMDqQZJJLIEhuhorA1Rk+noOJgWRGxlTNX35XJjeHCY6Gcqnxq4adPIyzg4yXFMtOR3dZ3fzJ/YiK2MiYKU0+2koKFNAZnojY3oaSRgd/chmdAGsZIEGcABK9bfkoyNnNPmWKk4iWVRaquzJ67FTkxUck7hqg9cyGJTAVSqL5xXancsIANXHMOTsYabAPg1wIUVx6lQg7GGmuheWFuTHCaB+DXChWKiBQt5PwnwiY3iWRqnon+AAJ+B1VrhRNJgWB8TSUYzNoqHaR1XIIkCMPn4gF8LnEi6IBvYbKyRbZmMGG8FkLMAEj22gNPxgNIJrxtNZlliX5bYgmZY4nD1xuKjAEas88VtPyTAZwt4N8losJJmCoWWWuG8FL9FSVKasz36kwzbKoZK9WWBy5Sogf5U+VfKjL3gxG7WepQ6HeZf4GMsnGM85KSL3no3CyIDnJXUFjVflUxPzwG5fdmI3sptrl7tVmZJ81hpgYBhb6fJSNNKNGf3zpo0sN5Ok1GqVS40dqmXdyoknMqwJncIadMz+ysF14kbDLzPLeAAEvjmNLLzqU6bI7nk23o97+ztUS/n5Q72pJPxpySZG6WOxI4DTksSdl8UbJAzhuhUboDOwRkIU9CGCReCfg4Y1cC4JHlpeiPs/shVIip15QdK1CzJPKw4Ot3z24fgrbC9fX/dwKpAPa/BEJ0LGgx5rFx/cpsJXrKAcSlf8riZ+1Lu6n/TX7L4t56sSGuqAAAAAElFTkSuQmCC",
-            info: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACgAAAAoCAYAAACM/rhtAAAACXBIWXMAAAsTAAALEwEAmpwYAAAChklEQVR4nO2YS2sUQRSFvzG+NRoDo4JZ+AcERV0JvkWNLqLOzpX+ABc+NwluRRFFGR+gKDjRlRtBoi7ci+JSwaC4CBISQ1CJYhRGKpyGi0z3VHW6O4LzQUMv7ul7qKquuregRYtEFgN7gFPANaAG9Ov9DNANtFMwJaAHGAB+AvUmzy/FVqTNnbMxRkaB93qGY2JeAduLMjgOXAX2Ap0N4jo0/Vdk3hq9DyzMy6CbpvXAggDNIqAX+PLXaHZN10wbMJfsKANPjMmh6Zh00zYIjAGrMzTZBpwzJl+nne4H5iObyJ7L5vtuawqiYsQPA3QbgQ0BI/nY5Nnhm2QW8EaiYa0bH46aZEc8NcuBr9K89N0ne0yiY/hz2+huBej6jO6gj2BAwWM6ynxZB3zQRr02cAv6rJxuyhOZD3xXsDtPi6KqnJPNBmWnGW431UWxz+R1p08sJ0xgo+PL5++vpNB1mryuMorlvIImUiRZY5K491CideimO5a7CnKLPZStxqB7D2VQ2ntJQTUFvZsBgx+lvZMUdF1BIzNgcEJat8xiOW2SdBRosGy0J5MCu31/94wNHjLazUmBS9RD1FUtF2XwhnQ/dFgkEhWUozqG8jbYbgqGR6GlVm8BBo8bnetvmlJSv1BXD1HO0eAKNV9O81alnhdbTLJnwGwPzUolG9e7DxdMnt0E0m/Elzw1S/X4Ep39rr0IxrWVL4zJm8AcsqcrZGobiYeMyacq0/8pVpmfpq4toS9wCyoB83L0ODXddk1GLUFVxeayBhp3VO4CLgKfgG+BrUAqtqn7anZ5NBITc4ACKOnsdA3OZMK1W/T8Bp4Dh4u6fou7wKyqnqyZC8z9KaqiFv8XfwAAE/f0kvwhvgAAAABJRU5ErkJggg==",
-            confirm: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACgAAAAoCAYAAACM/rhtAAAACXBIWXMAAAsTAAALEwEAmpwYAAAEFElEQVR4nO1YX4iUVRT/JiPTLF3Xae79dtKXpYcQKsjetSg1CPwzFOn2nfNtDLWw9GQllNJb6INiaYiCgm4PG/imaWvcc2Zrs9zoZeshKwoiLLf/ULRRE2fm7uy1ne/PfDtjBfuDCxe+c+/93XPvPed3Ps+bxzyi0Tt4ZqEO+QGN9IwGPqSQh6RJXwM9q4A2dodv3+xdW1RzCmizRh7WQD9r5GpsA/5DI7+hsLJVxnaUmo/mfg18sTkZ+kYDfVZvfDnCZrwAvK7txFYF5kYNdMJdTCFPaqTj4s1VgVnWZMwyFZj1CumAAr5y1Vjg13R5fHFbyK0os9ZAF5wj+0Uhv7R824Vb0s4hZOROauAfnQ1+qPtGV86ZoEaacI7oLYWVfNa5FFbyCumsQ/KrnidMsT0EgV7xdpvrvbmiNLxAAe1z72WxNLYo83xd5ZGlhdCsTjTcXb3OB75NmvSTzBXyfseTQ17nUM0pNE9d9XKBL6uQn4wNK6XhBRr59PQYP6jc1xF6Sl5kRAxM8kxh+zu3NmIp8MW2x0kd8rYZr9FHGqlca8AfO555NHaDyC/MhB/anLhoD47eqZE2pdmNRhq3u//CTWnSV0hf2oXfj5ujsP3cTfWYWrM9HbtgfsAskThnX9emJIIK+TfrvT1NyO+tHzP9mrxRPmjnmRIO0bsJaa3j7o0pCE7W7AMzOPsbHbBZ40rSPIWQH2qsG5j1cTt5znrvL102KxIn7ud7FdCAqJrZL7QRP99LmqfYP7Z8mmAh5B2Rho1dI096GXFHaeIGDXTMeTxPpxnn3MODkUbTgkABX8pCTkvORTYzYYY+EKGRiiDwJbuhEzFGdNJ68JNMBIEPOXHwXYlzacfKmvbun4xZgF61u/i2VXLd9dDyu/Xc+Vn3MgGNTAR8ONpIpLv1QDONFwc/pLsbwTmkh1vdXO1h1gnujDSU0JLquTdBPjBKIf8gTfqtjtVAf1qCD0Yaigi1NYQc08teBuXTVR5Z6mWAOEcFpi8xg00LSgmwkoa8/xoUVrY6tcPzLY0FWqNCc4/XWVRzDRGA9FNaie+jQScbQEcpSmnoBNuzkrqSxiikI04eP5pqndCsznpnJXAOOQvuS7L3A3OXBvpc6mLpJ89Pu+wpTWQiKIXMzFHXssv+NJ5MRjWngV90ha6XFVISSmnoePJcK+nrn/D7Rro10OsOua+L/abXmwuKj5/vcT0pNYTI9FZCUO/gmYUiy9zCSsSB31e5fU7kGiRLY4vcO2m9+Z1IIxGbKx8b7WrmrZhfH6fku9du1BR3xM8jJSTszyOF9H1EpfepAip5nUU1p0LeUqtpgaaiSk7nSkwp5Dd94EdEzHrXEvkBs0SOUWS6HHdNT9ZFrxz9DoW04V/4gTmP/xf+BqlXF2+DkpvOAAAAAElFTkSuQmCC",
-        };
-
-        return `<img style="opacity:0.9;width:35px" src="${icons[type]}">`;
-    }
-}
-
-const popup = new PopupJs();
-
-/* PUBLIC API */
-
-const PopupJS = {
-
-    alert(message) {
-        popup.show({
-            title: "Info",
-            message,
-            type: "info"
-        });
-    },
-
-    success(message) {
-        popup.show({
-            title: "Success",
-            message,
-            type: "success"
-        });
-    },
-
-    error(message) {
-        popup.show({
-            title: "Error",
-            message,
-            type: "error"
-        });
-    },
-
-    confirm(message) {
-
-        return new Promise((resolve) => {
-
-            popup.show({
-                title: "Confirm",
-                message,
-                type: "confirm",
-                showCancel: true,
-                onConfirm: () => resolve(true)
-            });
-
-        });
-    }
-};
-
-window.PopupJS = PopupJS;
+    window.PopupJS = {
+        alert: (msg, theme) => instance.show({ title: "Info", message: msg, type: "info", theme: theme }),
+        confirm: (msg, theme) => new Promise(res => instance.show({ title: "Confirm", message: msg, type: "confirm", showCancel: true, theme: theme, onConfirm: () => res(true) })),
+        toast: (msg, opts = {}) => instance.toast({ message: msg, icon: opts.icon || "success", position: opts.position, theme: opts.theme, duration: opts.duration })
+    };
 
 })(window);
